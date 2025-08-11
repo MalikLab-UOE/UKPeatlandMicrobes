@@ -12,7 +12,9 @@ The original raw sequence reads are available in the NCBI Sequence Read Archive 
 `Plots` include the saved figures in `PNG` format.
 
 # Notebook Table of Contents
-1. [Bioinformatic Workflow](https://github.com/AnantharamanLab/UKPeatlandViruses/blob/main/workflow.ipynb)
-2. [Map of Study Sites](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Scripts/Figure1a.R)
-3. [Ecosystem Properties](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Scripts/Figure1b-i.R)
-4. [Microbial Community-level Growth Rates](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Scripts/Figure2.R)
+1. [Map of Study Sites](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Scripts/Figure1a.R)
+2. [Ecosystem Properties](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure1/Figure1b-i.md)
+3. [Microbial Community-level Growth Rates](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure2/Figure2.md)
+4. [Bioinformatic Workflow](https://github.com/AnantharamanLab/UKPeatlandViruses/blob/main/workflow.ipynb)
+5. [Microbial population-level metabolic potential]((https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure6/Figure6.md))
+]
