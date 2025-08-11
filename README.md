@@ -16,5 +16,5 @@ The original raw sequence reads are available in the NCBI Sequence Read Archive 
 2. [Ecosystem Properties](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure1/Figure1b-i.md)
 3. [Microbial Community-level Growth Rates](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure2/Figure2.md)
 4. [Bioinformatic Workflow](https://github.com/AnantharamanLab/UKPeatlandViruses/blob/main/workflow.ipynb)
-5. [Microbial population-level metabolic potential]((https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure6/Figure6.md))
+5. [Microbial population-level metabolic potential](https://github.com/MalikLab-UOE/UKPeatlandMicrobes/blob/main/Notebooks/Figure6/Figure6.md)
 ]
