@@ -1,45 +1,53 @@
 ################################################################################
-##  Figure 4 & 5  —  DESeq2 (VST) 
+##  Figures 4 & 5 — metabolic-pathway gene abundance across peatland sites
+##  ---------------------------------------------------------------------------
+##  Reproduces the KEGG and CAZyme abundance figures for the 7-site peatland
+##  study. For each metabolic process the script draws a treatment boxplot, an
+##  abundance-vs-ecosystem-health regression, a per-site facet, and (for the
+##  key carbon pathways) a growth-vs-abundance correlation.
+##
+##  Abundances are summarised two ways, written to separate output directories:
+##    * VST : DESeq2 variance-stabilising transformation
+##    * CLR : centred-log-ratio on prodigal-normalised counts (compositions pkg)
+##  and with two y-axis label styles ("_new"/"_clr" carry the transform in the
+##  axis title; "_nolabel"/"_clr_nolabel" show only the pathway name, for
+##  stitching panels into composite figures).
+##
+##  Nitrogen / Sulfur / Methane are defined from KEGG modules with the oxidation
+##  steps removed (KO lists fetched live from KEGG). Fermentation is an explicit
+##  KO list; Aromatic compounds and Carbon fixation are whole KEGG pathways.
+##
+##  Every figure is produced for two site schemes (Stean is always excluded):
+##    * all_sites     : Stean removed
+##    * no_MH_Crocach : Stean + Moors_House + Crocach removed
+##
+##  Data expected in Data/Figure4&5/. Outputs go to Figure4_5_merged_{new,
+##  nolabel,clr,clr_nolabel}/.
 ################################################################################
 
 library(tidyverse)
 library(DESeq2)
-library(compositions)   # CLR transform (Figure4_5_merged_clr output set)
+library(compositions)   # CLR transform
 library(emmeans)
 library(scales)
 library(ggpubr)
 library(KEGGREST)
 
 ## ---------------------------------------------------------------------------
-## 0. Global settings: output root, site palette, shared labels, site schemes
+## 0. Global settings: output roots, site palette, labels, site schemes
 ## ---------------------------------------------------------------------------
-new_root <- "Figure4_5_merged_new"
-dir.create(new_root, showWarnings = FALSE)
+new_root         <- "Figure4_5_merged_new"          # VST, transform in y label
+nolabel_root     <- "Figure4_5_merged_nolabel"      # VST, pathway name only
+clr_root         <- "Figure4_5_merged_clr"          # CLR, transform in y label
+clr_nolabel_root <- "Figure4_5_merged_clr_nolabel"  # CLR, pathway name only
+for (d in c(new_root, nolabel_root, clr_root, clr_nolabel_root))
+  dir.create(d, showWarnings = FALSE)
 
-# Second output set for figure stitching: y-axis shows the pathway name only
-# (no "(Abundance VST value)" line), and the per-Site facet is abundance (y)
-# vs Ecosystem health index (x) instead of growth-vs-abundance.
-nolabel_root <- "Figure4_5_merged_nolabel"
-dir.create(nolabel_root, showWarnings = FALSE)
-
-# Third output set: identical layout to Figure4_5_merged_new (two-line y label,
-# growth-vs-abundance facet) but the abundance values are CLR-transformed
-# (centred-log-ratio on prodigal-normalised counts) instead of VST. Pathway
-# definitions are unchanged (de-oxygenated KO sets for N/S/Methane).
-clr_root <- "Figure4_5_merged_clr"
-dir.create(clr_root, showWarnings = FALSE)
-
-# Fourth output set: CLR values with the nolabel y-axis style (plain pathway
-# name only, abundance-vs-eco-index facet) for stitching panels together.
-clr_nolabel_root <- "Figure4_5_merged_clr_nolabel"
-dir.create(clr_nolabel_root, showWarnings = FALSE)
-
-# Prodigal normalisation constant (shared by the KEGG & CAZyme CLR matrices;
-# a per-sample linear scale factor that does not affect the CLR geometry).
+# Prodigal normalisation constant for the CLR matrices (per-sample linear scale;
+# does not affect the CLR geometry).
 prodigal_scale <- 57474057.89
 
-# Named palette so each site keeps the same colour regardless of which sites are
-# present in a given scheme (avoids colour shifting when points are dropped).
+# Named palette so each site keeps the same colour whichever scheme is drawn.
 site_colors <- c(
   "Balmoral"    = "#e41a1c",
   "Bowness"     = "#377eb8",
@@ -50,8 +58,7 @@ site_colors <- c(
   "Stean"       = "#a65628"
 )
 
-# Display names for sites (labels only; data/palette keys stay as-is).
-# "Moors_House" is shown as "Moor House" (no underscore) in facet strips & legend.
+# Display names (labels only; data keys stay as-is). "Moors_House" -> "Moor House".
 site_labels <- c(
   "Balmoral"    = "Balmoral",
   "Bowness"     = "Bowness",
@@ -62,16 +69,12 @@ site_labels <- c(
   "Stean"       = "Stean"
 )
 
-# Facet strip order (left -> right) for the per-Site facet panels.
-# Uses data keys; display names come from site_labels. Any site absent from a
-# scheme is dropped automatically by facet_grid(drop = TRUE).
+# Facet strip order (left -> right); absent sites are dropped automatically.
 facet_site_order <- c("Balmoral", "Bowness", "Moors_House", "Langwell", "Crocach", "Migneint")
 
-# Shared growth-rate y-axis label
 growth_ylab <- expression("Microbial growth rate (ng g"^{-1}*"h"^{-1}*")")
 
-# Two site schemes. Stean is ALWAYS excluded (removed at data load via grep on
-# the "SE" Sample_ID prefix), so it is not listed here.
+# Two site schemes (Stean is always excluded at data load, so not listed here).
 schemes <- list(
   list(tag = "all_sites",     drop = character(0),                label = "Stean removed"),
   list(tag = "no_MH_Crocach", drop = c("Moors_House", "Crocach"), label = "Stean + Moors_House + Crocach removed")
@@ -195,11 +198,10 @@ kegg_defs <- attach_env(kegg_defs)
 cazy_defs <- attach_env(cazy_defs)
 
 ## ---------------------------------------------------------------------------
-## 5b. CLR normalisation — KEGG + CAZyme (parallel to the VST pipeline above)
-##     Prodigal-normalise raw counts, then clr(mat + 0.5) per sample (compositions
-##     package). Pathway/substrate gene sets are IDENTICAL to the VST pipeline
-##     (de-oxygenated KO lists for N/S/Methane). The summed column is named
-##     `sum_vst` so all downstream plotting code is reused unchanged.
+## 5b. CLR normalisation — KEGG + CAZyme
+##     Prodigal-normalise, then clr(mat + 0.5) per sample. Gene sets match the
+##     VST pipeline; the summed column keeps the name `sum_vst` so the plotting
+##     code below is shared between the VST and CLR output sets.
 ## ---------------------------------------------------------------------------
 prodigal_kegg <- read.csv("Data/Figure4&5/prodigal_output_kegg.csv")
 prodigal_cazy <- read.csv("Data/Figure4&5/prodigal_output_caz_abund.csv")
@@ -290,22 +292,18 @@ make_pathway_plots <- function(merged_all, plot_name, file_tag, category, scheme
   # Order the per-Site facet strips (drop levels not present in this scheme).
   dat$Site <- factor(dat$Site, levels = intersect(facet_site_order, unique(dat$Site)))
 
-  # Transform wording for the value axis: "VST value" or "CLR value".
   value_word <- if (value_mode == "clr") "CLR value" else "VST value"
 
-  # y-axis label = "<pathway> gene abundance". "vst" keeps the (<transform> value)
-  # second line; "plain" (for stitching multiple panels) drops that wording.
+  # y-axis label: labelled sets use a two-line "<pathway> gene abundance /
+  # (<transform> value)"; nolabel sets use just the pathway name (for stitching).
   y_label_expr <- if (label_mode == "vst") {
     bquote(atop(.(paste(plot_name, "gene abundance")), .(paste0("(", value_word, ")"))))
   } else {
-    paste(plot_name, "gene abundance")
+    plot_name
   }
 
-  # Facet plots use the full pathway name for Carbon fixation
-  facet_name <- if (plot_name == "Carbon fixation") "Carbon fixation in prokaryotes" else plot_name
-  # Abundance-axis label on the per-Site facet panels: plain pathway name, matching
-  # the original Figure4_5_merged_nolabel version (no "gene abundance" here — the
-  # "gene abundance" wording stays only on the Boxplot / LM_Eco panels).
+  # Facet abundance axis uses the plain pathway name (full name for Carbon fixation).
+  facet_name      <- if (plot_name == "Carbon fixation") "Carbon fixation in prokaryotes" else plot_name
   facet_abund_lab <- facet_name
 
   # A. Boxplot by treatment
@@ -316,7 +314,7 @@ make_pathway_plots <- function(merged_all, plot_name, file_tag, category, scheme
     theme(legend.position = "none", aspect.ratio = 1,
           axis.text = element_text(size = 13, colour = "black")) +
     scale_x_discrete(limits = c("DAM", "REST", "NAT"),
-                     labels = c("DAM" = "Degraded", "NAT" = "Natural", "REST" = "Restored")) +
+                     labels = c("DAM" = "Restored", "NAT" = "Near-natural", "REST" = "Rewetted")) +
     scale_colour_manual(values = site_colors)
   ggsave(file.path(out_dir, paste0("Boxplot_", file_tag, ".png")), p1,
          dpi = 1000, width = 4, height = 4, units = "in")
@@ -325,7 +323,7 @@ make_pathway_plots <- function(merged_all, plot_name, file_tag, category, scheme
   p2 <- ggplot(dat, aes(x = eco_index, y = sum_vst)) +
     geom_point(aes(fill = Site, shape = Treatment), size = 4, alpha = 0.7, color = "black") +
     geom_smooth(method = "lm", color = "black", se = TRUE, linetype = "dashed", size = 0.7) +
-    scale_shape_manual(values = c(21, 22, 23), limits = c("NAT", "REST", "DAM")) +
+    scale_shape_manual(values = c(23, 22, 21), limits = c("DAM", "REST", "NAT")) +
     scale_fill_manual(values = site_colors) +
     ylab(y_label_expr) + xlab("Ecosystem health index") + theme_light(base_size = 14) +
     theme(legend.position = "none", axis.text = element_text(size = 13, colour = "black"))
@@ -343,8 +341,8 @@ make_pathway_plots <- function(merged_all, plot_name, file_tag, category, scheme
                   size = 0.7, alpha = 0.3) +
       scale_y_continuous(trans = "log2", labels = label_number(accuracy = 0.1), limits = c(0.05, 11)) +
       scale_fill_manual(values = site_colors) +
-      scale_shape_manual(name = "Treatment", values = c(21, 22, 23), limits = c("NAT", "REST", "DAM"),
-                         labels = c("DAM" = "Degraded", "NAT" = "Natural", "REST" = "Restored")) +
+      scale_shape_manual(name = "Treatment", values = c(23, 22, 21), limits = c("DAM", "REST", "NAT"),
+                         labels = c("DAM" = "Restored", "NAT" = "Near-natural", "REST" = "Rewetted")) +
       xlab(facet_abund_lab) +
       (if (value_mode == "clr")
          scale_x_continuous(breaks = scales::breaks_pretty(n = 3))
@@ -365,8 +363,8 @@ make_pathway_plots <- function(merged_all, plot_name, file_tag, category, scheme
       geom_smooth(method = "lm", color = "black", se = TRUE, linetype = "dashed",
                   size = 0.7, alpha = 0.3) +
       scale_fill_manual(values = site_colors) +
-      scale_shape_manual(name = "Treatment", values = c(21, 22, 23), limits = c("NAT", "REST", "DAM"),
-                         labels = c("DAM" = "Degraded", "NAT" = "Natural", "REST" = "Restored")) +
+      scale_shape_manual(name = "Treatment", values = c(23, 22, 21), limits = c("DAM", "REST", "NAT"),
+                         labels = c("DAM" = "Restored", "NAT" = "Near-natural", "REST" = "Rewetted")) +
       xlab("Ecosystem health index") +
       ylab(facet_abund_lab) +
       scale_x_continuous(breaks = scales::breaks_pretty(n = 3)) +
@@ -408,8 +406,8 @@ make_growth_corr <- function(merged_all, plot_name, x_axis_label, file_tag, sche
                 size = 0.7, alpha = 0.3) +
     scale_y_continuous(trans = "log2", labels = label_number(accuracy = 0.1), limits = c(0.05, 11)) +
     scale_fill_manual(values = site_colors) +
-    scale_shape_manual(name = "Treatment", values = c(21, 22, 23), limits = c("NAT", "REST", "DAM"),
-                       labels = c("DAM" = "Degraded", "NAT" = "Natural", "REST" = "Restored")) +
+    scale_shape_manual(name = "Treatment", values = c(23, 22, 21), limits = c("DAM", "REST", "NAT"),
+                       labels = c("DAM" = "Restored", "NAT" = "Near-natural", "REST" = "Rewetted")) +
     xlab(x_axis_label) +
     (if (value_mode == "clr")
        scale_x_continuous(breaks = scales::breaks_pretty(n = 4))
@@ -445,11 +443,9 @@ make_growth_corr <- function(merged_all, plot_name, x_axis_label, file_tag, sche
 ## ---------------------------------------------------------------------------
 ## 8. Generate all figures — both site schemes, KEGG + CAZyme
 ## ---------------------------------------------------------------------------
-# Two label modes: "vst" -> Figure4_5_merged_new (original, two-line y label,
-# growth-vs-abundance facet); "plain" -> Figure4_5_merged_nolabel (pathway-name
-# y label only, abundance-vs-eco-index facet, for stitching).
-## Each output set names its abundance transform (value_mode: "vst" or "clr"),
-## its y-label style (label_mode), and which per-pathway def lists to draw from.
+# Each output set = an abundance transform (value_mode vst/clr), a y-label style
+# (label_mode vst = two-line labelled / plain = pathway name only), and the
+# matching per-pathway definition lists.
 output_sets <- list(
   list(root = new_root,     mode = "vst",   value_mode = "vst", kegg = kegg_defs,     cazy = cazy_defs),
   list(root = nolabel_root, mode = "plain", value_mode = "vst", kegg = kegg_defs,     cazy = cazy_defs),
@@ -572,15 +568,15 @@ make_scheme_legend <- function(scheme) {
   # Keep sites in the fixed palette order, restricted to those present
   sites_present <- names(site_colors)[names(site_colors) %in% unique(ref$Site)]
   ref$Site      <- factor(ref$Site, levels = sites_present)
-  ref$Treatment <- factor(ref$Treatment, levels = c("NAT", "REST", "DAM"))
+  ref$Treatment <- factor(ref$Treatment, levels = c("DAM", "REST", "NAT"))
 
   p <- ggplot(ref, aes(x = eco_index, y = sum_vst)) +
     geom_point(aes(fill = Site, shape = Treatment), size = 4, alpha = 0.7, colour = "black") +
     scale_fill_manual(name = "Site", values = site_colors[sites_present],
                       labels = site_labels[sites_present], drop = FALSE) +
-    scale_shape_manual(name = "Treatment", values = c(21, 22, 23),
-                       limits = c("NAT", "REST", "DAM"),
-                       labels = c("NAT" = "Natural", "REST" = "Restored", "DAM" = "Degraded")) +
+    scale_shape_manual(name = "Treatment", values = c(23, 22, 21),
+                       limits = c("DAM", "REST", "NAT"),
+                       labels = c("NAT" = "Near-natural", "REST" = "Rewetted", "DAM" = "Restored")) +
     guides(
       fill  = guide_legend(order = 1, override.aes = list(shape = 21, size = 4, alpha = 1)),
       shape = guide_legend(order = 2, override.aes = list(fill = "grey40", size = 4, alpha = 1))
